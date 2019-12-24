@@ -6,6 +6,7 @@ networkx==2.3
 numpy==1.16.4
 pandas==0.24.2
 pytorch-nlp==0.4.1
+pytorch_transformers==1.2.0
 regex==2019.8.19
 sacrebleu==1.4.1
 sacremoses==0.0.34
@@ -16,5 +17,5 @@ spacy==2.1.8
 torch==1.2.0
 torchaudio==0.3.0
 torchtext==0.4.0
-torchvision==0.4.0a0+6b959ee
+torchvision==0.4.0
 tqdm==4.32.1
