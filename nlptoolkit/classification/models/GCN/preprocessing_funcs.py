@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Wed Jul 31 10:44:05 2019
 
@@ -21,10 +20,6 @@ logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', \
                     datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 logger = logging.getLogger(__file__)
 
-nltk.download('stopwords')
-nltk.download('punkt')
-
-
 def load_pickle(filename):
     completeName = os.path.join("./data/", \
                                 filename)
@@ -46,12 +41,11 @@ def nCr(n, r):
 
 
 ### remove stopwords and non-words from tokens list
-def filter_tokens(tokens, stopwords):
+def filter_tokens(tokens):
     tokens1 = []
     for token in tokens:
-        token = token.lower()
-        if (token not in stopwords) and (token not in [".", ",", ";", "&", "'s", ":", "?", "!", "(", ")", "@", \
-                                                       "'", "'m", "'no", "***", "--", "...", "[", "]"]):
+        if token not in [".", ",", ";", "&", "'s", ":", "?", "!", "(", ")", "@", \
+                        "'", "'m", "'no", "***", "--", "...", "[", "]", "''"]:
             tokens1.append(token)
     return tokens1
 
@@ -80,6 +74,14 @@ def word_word_edges(p_ij):
             word_word.append((w1, w2, {"weight": p_ij.loc[w1, w2]}))
     return word_word
 
+def get_vocab(df):
+    vocab = set()
+    for text in df["text"]:
+        for word in text:
+            vocab.add(word)
+
+    return list(vocab)
+
 
 def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
     """ generates graph based on text corpus (columns = (text, label)); window = sliding window size to calculate point-wise mutual information between words """
@@ -89,10 +91,9 @@ def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
     df = pd.concat((df, pd.read_csv(infer_data)), ignore_index=True)
     df.dropna(inplace=True)
 
-    stopwords = list(set(nltk.corpus.stopwords.words("russian")))
-
     ### tokenize & remove funny characters
-    df["text"] = df["text"].apply(lambda x: nltk.word_tokenize(x)).apply(lambda x: filter_tokens(x, stopwords))
+    # df["text"] = df["text"].apply(lambda x: nltk.word_tokenize(x)).apply(lambda x: filter_tokens(x, stopwords))
+    df["text"] = df["text"].apply(lambda text: text.split()).apply(lambda x: filter_tokens(x))
     save_as_pickle("df_data.pkl", df)
 
     ### Tfidf
@@ -101,11 +102,16 @@ def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
                                  preprocessor=dummy_fun)
     vectorizer.fit(df["text"])
     df_tfidf = vectorizer.transform(df["text"])
-    print(df_tfidf.shape)
     df_tfidf = df_tfidf.toarray()
     vocab = vectorizer.get_feature_names()
     vocab = np.array(vocab)
     df_tfidf = pd.DataFrame(df_tfidf, columns=vocab)
+
+    ### random initialization
+    # logger.info("Random initialization...")
+    # vocab = get_vocab(df)
+    # word_vectors = np.random.uniform(0.01, 3.01, (len(df), len(vocab)))
+    # df_tfidf = pd.DataFrame(word_vectors, columns=vocab)
 
     ### Build graph
     logger.info("Building graph (No. of document, word nodes: %d, %d)..." % (len(df_tfidf.index), len(vocab)))
@@ -116,7 +122,7 @@ def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
     G.add_nodes_from(vocab)  ## word nodes
     ### build edges between document-word pairs
     logger.info("Building document-word edges...")
-    document_word = [(doc, w, {"weight": df_tfidf.loc[doc, w]}) for doc in
+    document_word = [(doc, w, {"weight": round(df_tfidf.loc[doc, w],  3)}) for doc in
                      tqdm(df_tfidf.index, total=len(df_tfidf.index)) \
                      for w in df_tfidf.columns]
     G.add_edges_from(document_word)
@@ -135,6 +141,8 @@ def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
         for i in range(len(l) - window):
             no_windows += 1
             d = set(l[i:(i + window)])
+            d = list(d)
+            d = [w for w in d if w in names]
 
             for w in d:
                 n_i[w] += 1
@@ -147,7 +155,8 @@ def generate_text_graph(train_data, infer_data, max_vocab_len, window=10):
 
     logger.info("Calculating PMI*...")
     ### convert to PMI
-    p_ij = pd.DataFrame(occurrences, index=names, columns=names) / no_windows
+    occurrences = occurrences / no_windows
+    p_ij = pd.DataFrame(occurrences, index=names, columns=names)
     p_i = pd.Series(n_i, index=n_i.keys()) / no_windows
 
     del occurrences

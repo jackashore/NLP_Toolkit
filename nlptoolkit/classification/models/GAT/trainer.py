@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jul 31 15:25:41 2019
 
-@author: WT
-"""
 import os
 import numpy as np
 import torch
@@ -15,10 +10,24 @@ from .GAT import GAT, SpGAT
 from .preprocessing_funcs import load_pickle, save_as_pickle
 import matplotlib.pyplot as plt
 import logging
+from sklearn.metrics import *
+
 
 logging.basicConfig(format='%(asctime)s [%(levelname)s]: %(message)s', \
                     datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 logger = logging.getLogger(__file__)
+
+
+def metrics(output, labels_e):
+    if len(labels_e) == 0:
+        return (0, 0, 0)
+    else:
+        _, labels = output.max(1); labels = labels.cpu().numpy() if labels.is_cuda else labels.numpy()
+        recall = recall_score(labels, labels_e, average="macro")
+        precision = precision_score(labels, labels_e, average="macro")
+        f1 = f1_score(labels, labels_e, average="macro")
+        return (recall, precision, f1)
+
 
 def train_and_fit(args, sparse=True):
     cuda = torch.cuda.is_available() and args.use_cuda
@@ -72,11 +81,15 @@ def train_and_fit(args, sparse=True):
             net.eval()
             with torch.no_grad():
                 pred_labels = net(f, A_hat)
+                train_metrics = metrics(pred_labels[selected], labels_selected); untrained_metrics = metrics(pred_labels[test_idxs], labels_not_selected)
                 trained_accuracy = evaluate(pred_labels[selected], labels_selected); untrained_accuracy = evaluate(pred_labels[test_idxs], labels_not_selected)
             evaluation_trained.append((e, trained_accuracy)); evaluation_untrained.append((e, untrained_accuracy))
-            print("[Epoch %d]: Evaluation accuracy of trained nodes: %.7f" % (e, trained_accuracy))
-            print("[Epoch %d]: Evaluation accuracy of test nodes: %.7f" % (e, untrained_accuracy))
             print("[Epoch %d]: Loss: %.7f" % (e, losses_per_epoch[-1]))
+            print("Evaluation accuracy of trained nodes: %.7f" % (trained_accuracy))
+            print("Evaluation recall, precision, f1-score of trained nodes: {:.3f}, {:.3f}, {:.3f}".format(train_metrics[0], train_metrics[1], train_metrics[2]))
+            print("Evaluation accuracy of test nodes: %.7f" % (
+                untrained_accuracy))
+            print("Evaluation recall, precision, f1-score of test nodes: {:.3f}, {:.3f}, {:.3f}".format(untrained_metrics[0], untrained_metrics[1], untrained_metrics[2]))
             print("Labels of trained nodes: \n", output[selected].max(1)[1])
             net.train()
             if trained_accuracy > best_pred:
